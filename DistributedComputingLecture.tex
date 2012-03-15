@@ -1,0 +1,214 @@
+\documentclass{beamer}
+\usepackage{beamerthemesplit}
+\usepackage{hyperref}
+
+\begin{document}
+\title{Using Hadoop: Best Practices}
+\author{Casey Stella}
+\date{\today} 
+
+\frame{\titlepage} 
+
+\frame{\frametitle{Table of Contents}\tableofcontents} 
+
+\section{Introduction}
+
+\frame{\frametitle{Introduction}
+\begin{itemize}
+\item Hi, I'm Casey
+  \begin{itemize}
+  \item I work at Explorys
+  \item I work with Hadoop and the Hadoop ecosystem daily
+  \end{itemize}\pause
+\item I'm going to talk about some of the best practices that I've seen
+  \begin{itemize}
+  \item Some of these are common knowledge
+  \item Some of these don't show up until you've been up 'til 3AM debugging a problem.
+  \end{itemize}\pause
+\item These are my opinions and not necessarily the opinions of my employer.
+\end{itemize}
+}
+
+\section{Background}
+
+\frame{\frametitle{The Lay of the Land -- The Bad}
+\begin{itemize}
+\item There are two APIs, prefer the mapred package
+   \begin{itemize}
+   \item The mapreduce and the mapred packages
+   \item mapred is deprecated, but still preferred
+   \item Hortonworks just kind of screwed up
+   \end{itemize}\pause
+\item The Pipes interface is really poorly implemented and very slow
+\item HDFS currently has a single point of failure
+\end{itemize}
+}
+
+\frame{\frametitle{The Lay of the Land -- The Good}
+\begin{itemize}
+\item Hortonworks is actively working on Map-Reduce v2
+   \begin{itemize}
+   \item This means other distributed computing models
+   \item Included in 0.23
+   \end{itemize}\pause
+\item HDFS is dramatically faster in 0.23
+   \begin{itemize}
+   \item Socket communication is made more efficient
+   \item Smarter checksumming
+   \end{itemize}
+\end{itemize}
+}
+
+\section{Using Hadoop Professionally}
+
+\subsection{Indexing}
+
+\frame{\frametitle{Indexing}
+\begin{itemize}
+\item Hadoop is a batch processing system, but you need realtime access\pause
+\item Options are
+   \begin{itemize}
+   \item Roll your own (Jimmy Lin talks about how one might serve up inverted indices in Chapter 3)\pause
+   \item Use an open source indexing infrastructure, like Katta\pause
+   \item Serve them directly from HDFS with an on-disk index aka Hadoop MapFiles\pause
+   \item Serve them through HBase or Cassandra\pause
+   \item If data permits, push them to a database
+   \end{itemize}\pause
+\item Katta can serve up both Lucene indices and Mapfiles\pause
+\item Indexing is hard, be careful.
+\end{itemize}
+}
+
+\subsection{Performance}
+
+\frame{\frametitle{Performance Considerations}
+\begin{itemize}
+\item Setup and teardown costs, so keep the HDFS block size large
+\item Mappers, Reducers and Combiners have memory constraints
+\item Transmission costs dearly 
+  \begin{itemize}
+  \item Use Snappy, LZO, or (soon) LZ4 compression at every phase
+  \item Serialize your objects tightly (e.g. not using Java Serialization)
+  \item Key/values emitted from the map phase had better be linear with a {\bf small} constant..preferably below $1$
+  \end{itemize}
+\end{itemize}
+}
+
+\frame{\frametitle{Performance Considerations}
+\begin{itemize}
+\item Strategies
+  \begin{itemize}
+  \item Intelligent use of the combiners
+  \item Use Local Aggregation in the mapper to emit a more complex value. (you already know this)
+  \item Ensure that all components of your keys are necessary in the sorting logic.  If any are not, push them into the value.
+  \end{itemize}\pause
+\item Profile {\bf JobConf.setProfileEnabled(boolean)} \footnote[1]{\url{http://hadoop.apache.org/common/docs/current/mapred_tutorial.html\#Profiling}}
+\item Use Hadoop Vaidya\footnote[2]{\url{http://hadoop.apache.org/common/docs/current/vaidya.html}}
+\end{itemize}
+}
+
+\section{Staying Sane}
+
+\subsection{Testing}
+
+\frame{\frametitle{Unit/Integration Testing Methodologies}
+\begin{itemize}
+\item First off, do it.
+\item Unit test individual mappers, reducers, combiners and partitioners
+  \begin{itemize}
+  \item Actual unit tests.  This will help debugging, I promise.
+  \item Design components so that dependencies can be injected via polymorphism when testing
+  \end{itemize}\pause
+\item Minimally verify that keys
+  \begin{itemize}
+  \item Can be serialized and deserialized
+  \item $hashcode()$ is sensible (Remember: the $hashcode()$ for enum is not stable across different JVMs instances)
+  \item $compareTo()$ is reflexive, symmetric and jives with $equals()$
+  \end{itemize}
+\item Integration test via single user mode hadoop
+\end{itemize}
+}
+
+\frame{\frametitle{Quality Assurance Testing}
+\begin{itemize}
+\item The output of processing large amounts of data is often large
+\item Verify statistical properties\pause
+  \begin{itemize}
+  \item If statistical tests fit within Map Reduce, then use MR
+  \item If not, then sample the dataset with MR and verify with R, Python or whatever.
+  \end{itemize}
+\item Do outlier analysis and thresholding based QA
+\end{itemize}
+}
+
+\subsection{Debugging}
+
+\frame{\frametitle{Debugging Methodologies}
+\begin{itemize}
+\item Better to catch it at the unit test level
+\item If you can't, I suggest the following technique
+  \begin{itemize}
+  \item Investigatory map reduce job to find the data causing the issue.
+  \item Single point if you're lucky, if not then a random sample using reservoir sampling
+  \item Take the data and integrate it into a unit test.
+  \end{itemize}\pause
+\item {\bf DO NOT}
+  \begin{itemize}
+  \item Use print statements to debug unless you're sure of the scope.
+  \item Use counters where the group or name count grows more than a fixed amount.
+  \end{itemize}\pause
+\item {\bf DO}
+  \begin{itemize}
+  \item Use a single counter in the actual job if the job doesn't finish
+  \item Use a map reduce job that outputs suspect input data into HDFS
+  \end{itemize}
+\end{itemize}
+}
+
+\section{State of Big Data and Hadoop}
+
+\frame{\frametitle{Hadoop Opinions}
+\begin{itemize}
+\item ``We're about a year behind Google'' -- Doug Cutting, Hadoop World\pause
+\item Giraph and Mahout are just not there yet\pause
+\item HBase is getting there (Facebook is dragging HBase into being serious)\pause
+\item Zookeeper is the real deal\pause
+\item Cassandra is cool, but eventual consistency is too hard to seriously consider.
+\end{itemize}
+}
+
+\frame{\frametitle{Big Data}
+\begin{itemize}
+\item We kind of went overboard w.r.t. Map Reduce
+   \begin{itemize}
+   \item Easier than MPI, but really not as flexible.
+   \item Bringing distributed computing to the masses...meh, maybe the masses don't need it.
+   \item M.R. v2 opens up a broader horizon
+   \end{itemize}\pause
+
+\item Data analysis is hard and often requires specialized skills
+  \begin{itemize}
+  \item Enter a new breed: the data scientist
+  \item Stats + Computer Science + Domain knowledge
+  \item Often not a software engineer
+  \end{itemize}
+\end{itemize}
+}
+
+\section{Conclusion}
+
+\frame{\frametitle{Conclusion}
+\begin{itemize}
+\item Thanks for your attention
+\item Follow me on twitter $@casey\_stella$
+\item Find me at
+  \begin{itemize}
+  \item \url{http://caseystella.com}
+  \item \url{https://github.com/cestella}
+  \end{itemize}
+\item P.S. If you dig this stuff, come work with me.
+\end{itemize}
+}
+
+
+\end{document}
